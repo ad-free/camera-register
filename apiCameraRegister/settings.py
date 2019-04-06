@@ -48,6 +48,9 @@ INSTALLED_APPS = [
 	'apps.cameras_account',
 	'apps.cameras_token',
 	'apps.firmware',
+	'apps.ftp',
+	'apps.servers',
+	'apps.location',
 ]
 
 MIDDLEWARE = [

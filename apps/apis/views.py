@@ -50,7 +50,7 @@ def api_camera_authenticate(request):
 	serial = request.data.get('serial', '').strip()
 	t = request.data.get('t', '').strip()
 	tk = request.data.get('tk', '').strip()
-
+	
 	if not serial:
 		errors.update({'message': _('This field is required.')})
 	elif check_special_chars(serial) and len(serial) > 30:
@@ -59,7 +59,7 @@ def api_camera_authenticate(request):
 		errors.update({'message': _('This field is required.')})
 	if not tk:
 		errors.update({'message': _('This field is required.')})
-
+	
 	if not errors:
 		try:
 			fpt_hmac = CDLL(settings.LIB_IPC_HMAC_PATH)
@@ -78,7 +78,7 @@ def api_camera_authenticate(request):
 		except Exception as e:
 			errors.update({'message': _('Server is error. Please try again later.')})
 			logger.info(logger_format(e, api_camera_authenticate.func_name))
-
+	
 	logger.info(logger_format('-------- END -------', api_camera_authenticate.func_name))
 	return Response({
 		'serial': serial,
@@ -95,7 +95,7 @@ def api_camera_register(request):
 	logger.info(logger_format('-------- START -------', api_camera_register.func_name))
 	ctx = {}
 	register = request.data.get('Register', '')
-
+	
 	if 'AuthCode' not in register:
 		ctx.update({'AuthCode': _('This field is required.')})
 		logger.error(logger_format('{}-{}'.format('AuthCode', 'This field is required.'), api_camera_register.func_name))
@@ -120,7 +120,7 @@ def api_camera_register(request):
 	elif not register['Firmware']:
 		ctx.update({'Firmware': _('This field is required.')})
 		logger.info(logger_format('{}-{}'.format('Firmware', 'This field is required.'), api_camera_register.func_name))
-
+	
 	if not ctx:
 		try:
 			camera = Camera.objects.get(serial=register['SerialNo'])
@@ -146,7 +146,7 @@ def api_camera_register(request):
 			logger.error(logger_format('Camera does not exists.', api_camera_register.func_name))
 		except Exception as e:
 			logger.error(logger_format(e, api_camera_register.func_name))
-
+	
 	logger.info(logger_format('-------- END -------', api_camera_register.func_name))
 	return Response({
 		'Cmd': 'Register',
@@ -163,7 +163,7 @@ def api_camera_request(request):
 	ctx = {}
 	serial = request.data.get('SerialNo', '')
 	token = request.data.get('Token', '')
-
+	
 	logger.info(logger_format('Check serial', api_camera_request.func_name))
 	if not serial:
 		logger.error(logger_format('SerialNo is required.', api_camera_request.func_name))
@@ -171,7 +171,7 @@ def api_camera_request(request):
 	if not token:
 		logger.error(logger_format('Token is required.', api_camera_request.func_name))
 		ctx.update({'Token': _('This field is required.')})
-
+	
 	logger.info(logger_format('Check the parameters include Name, SerialNo', api_camera_request.func_name))
 	if not ctx:
 		try:
@@ -201,7 +201,7 @@ def api_camera_request(request):
 			logger.error(logger_format('Token does not exists.', api_camera_request.func_name))
 		except Token.DoesNotExist:
 			logger.error(logger_format('Publish stream does not exists.', api_camera_request.func_name))
-
+	
 	logger.info(logger_format('-------- END -------', api_camera_request.func_name))
 	return Response({
 		'Cmd': 'Request',
@@ -219,12 +219,12 @@ def api_camera_config(request):
 	ctx = {}
 	serial = request.data.get('SerialNo', '')
 	token = request.data.get('Token', '')
-
+	
 	logger.info(logger_format('Check serial', api_camera_config.func_name))
 	if not serial:
 		logger.error(logger_format('SerialNo is required.', api_camera_config.func_name))
 		ctx.update({'SerialNo': _('This field is required.')})
-
+	
 	logger.info(logger_format('Check the parameters include Name, SerialNo', api_camera_config.func_name))
 	if not ctx:
 		try:
@@ -235,6 +235,8 @@ def api_camera_config(request):
 			camera_topic = camera.camera_topic
 			with open(camera_topic.ca_path.url[1:], 'r') as f:
 				certificate = f.read()
+			net_ftp = Config.objects.get(name='NetFTP').template.get('NetFTP', '')
+			camera_ftp_account = camera.ftp_camera.last()
 			logger.info(logger_format('-------- END -------', api_camera_config.func_name))
 			return Response({
 				'Cmd': 'Get',
@@ -290,7 +292,20 @@ def api_camera_config(request):
 							'NetWork.HTTP': Config.objects.get(name='HTTP').template.get('HTTP', '')
 						},
 						{
-							'NetWork.NetFTP': Config.objects.get(name='NetFTP').template.get('NetFTP', '')
+							'NetWork.NetFTP': {
+								'Directory': net_ftp['Directory'],
+								'MaxFileLen': net_ftp['MaxFileLen'],
+								'Enable': net_ftp['Enable'],
+								'Server': {
+									'UserName': camera_ftp_account.username,
+									'Name': 'FTP',
+									'Ssl': camera_ftp_account.ssl,
+									'Host': camera_ftp_account.host.split('//')[1],
+									'Anonymity': net_ftp['Server']['Anonymity'],
+									'Password': decrypt_password(camera_ftp_account.password, settings.FTP_SECRET_KEY),
+									'Port': camera_ftp_account.port
+								}
+							}
 						},
 						{
 							'NetWork.MediaPort': Config.objects.get(name='MediaPort').template.get('MediaPort', '')
@@ -312,7 +327,7 @@ def api_camera_config(request):
 			logger.error(logger_format('No topics found.', api_camera_config.func_name))
 		except Exception as e:
 			logger.error(logger_format(e, api_camera_config.func_name))
-
+	
 	logger.info(logger_format('-------- END -------', api_camera_config.func_name))
 	return Response({
 		'Cmd': 'Get',
@@ -331,13 +346,13 @@ def api_camera_firmware_details(request):
 	ctx = {}
 	serial = request.data.get('SerialNo', '')
 	token = request.data.get('Token', '')
-
+	
 	logger.info(logger_format('Check serial', api_camera_firmware_details.func_name))
 	if not serial:
 		ctx.update({'serial': _('This field is required')})
 	elif len(serial) > 30 or not check_special_chars(serial):
 		ctx.update({'serial': _('Incorrect formatting')})
-
+	
 	logger.info(logger_format('Check the parameters include serial and token', api_camera_firmware_details.func_name))
 	if not ctx:
 		try:
@@ -372,7 +387,7 @@ def api_camera_firmware_details(request):
 			}, status=status.HTTP_200_OK)
 		except Exception as e:
 			logger.error(logger_format(e, api_camera_firmware_details.func_name))
-
+	
 	return Response({
 		'Cmd': 'Get',
 		'Token': token,
@@ -392,23 +407,23 @@ def api_camera_firmware_upgrade(request):
 	firmware_file = ''
 	serial = optimize_request(request.data.get('serial', ''))
 	firmware_version = optimize_request(request.data.get('firmware_version', ''))
-
+	
 	logger.info(logger_format('Check serial', api_camera_firmware_upgrade.func_name))
 	if not serial:
 		ctx.update({'serial': _('This field is required')})
 	elif len(serial) > 30 or not check_special_chars(serial):
 		ctx.update({'serial': _('Incorrect formatting')})
-
+	
 	logger.info(logger_format('Firmware version is empty', api_camera_firmware_upgrade.func_name))
 	if not firmware_version:
 		ctx.update({'firmware_version': _('This field is required')})
-
+	
 	try:
 		firmware_file = request.FILES['firmware_file']
 	except MultiValueDictKeyError:
 		logger.error(logger_format('Firmware is empty', api_camera_firmware_upgrade.func_name))
 		ctx.update({'firmware_file': _('This field is required')})
-
+	
 	logger.info(logger_format('Check the parameters include serial, firmware_name, firmware_version', api_camera_firmware_upgrade.func_name))
 	if not ctx:
 		try:
@@ -427,7 +442,7 @@ def api_camera_firmware_upgrade(request):
 				'result': True,
 				'data': filename
 			}, status=status.HTTP_200_OK)
-
+	
 	logger.info(logger_format('-------- END -------', 'api_camera_firmware'))
 	return Response({
 		'status': status.HTTP_400_BAD_REQUEST,
@@ -444,7 +459,7 @@ def api_camera_firmware_download(request):
 	ctx = {}
 	serial = request.data.get('SerialNo', '')
 	token = request.data.get('Token', '')
-
+	
 	logger.info(logger_format('Check serial', api_camera_firmware_download.func_name))
 	if not serial:
 		ctx.update({'SerialNo': _('This field is required.')})
@@ -452,11 +467,11 @@ def api_camera_firmware_download(request):
 	elif len(serial) > 30 or not check_special_chars(serial):
 		ctx.update({'SerialNo': _('Incorrect formatting.')})
 		logger.info(logger_format('SerialNo incorrect formatting.', api_camera_firmware_download.func_name))
-
+	
 	if not token:
 		ctx.update({'Token': _('This field is required.')})
 		logger.info(logger_format('Token is required.', api_camera_firmware_download.func_name))
-
+	
 	logger.info(logger_format('Check the parameters include serial, firmware_name, firmware_version', api_camera_firmware_download.func_name))
 	if not ctx:
 		try:
@@ -470,7 +485,7 @@ def api_camera_firmware_download(request):
 			logger.error(logger_format('Camera does not exists', api_camera_firmware_download.func_name))
 		except Exception as e:
 			logger.error(logger_format(e, api_camera_firmware_download.func_name))
-
+	
 	logger.info(logger_format('-------- END -------', api_camera_firmware_download.func_name))
 	return Response({
 		'Cmd': 'Get',
