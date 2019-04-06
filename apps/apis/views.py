@@ -14,13 +14,15 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from apps.firmware.models import Firmware
+from apps.cameras_account.models import Account
+from ..firmware.models import Firmware
 from ..cameras_token.models import EmbeddedCameraToken, Token
 from ..brand.models import DeviceType, Brand
 from ..cameras.models import Camera
+from ..cameras_config.models import Config
 
 from .utils import APIAccessPermission, CameraTokenPermission, camera_token_detail, publish_stream_generator
-from ..commons.utils import logger_format, check_special_chars, optimize_request
+from ..commons.utils import logger_format, check_special_chars, optimize_request, decrypt_password
 
 from serializers import (
 	CameraAuthenticateSerializer, CameraRegisterSerializer, CameraRequestSerializer,
@@ -112,17 +114,17 @@ def api_camera_register(request):
 	elif not register['SerialNo']:
 		ctx.update({'SerialNo': _('This field is required.')})
 		logger.error(logger_format('{}-{}'.format('SerialNo', 'This field is required.'), api_camera_register.func_name))
-	if 'FirmWare' not in register:
-		ctx.update({'FirmWare': _('This field is required.')})
-		logger.error(logger_format('{}-{}'.format('FirmWare', 'This field is required.'), api_camera_register.func_name))
-	elif not register['FirmWare']:
-		ctx.update({'FirmWare': _('This field is required.')})
-		logger.info(logger_format('{}-{}'.format('FirmWare', 'This field is required.'), api_camera_register.func_name))
+	if 'Firmware' not in register:
+		ctx.update({'Firmware': _('This field is required.')})
+		logger.error(logger_format('{}-{}'.format('Firmware', 'This field is required.'), api_camera_register.func_name))
+	elif not register['Firmware']:
+		ctx.update({'Firmware': _('This field is required.')})
+		logger.info(logger_format('{}-{}'.format('Firmware', 'This field is required.'), api_camera_register.func_name))
 
 	if not ctx:
 		try:
 			camera = Camera.objects.get(serial=register['SerialNo'])
-			camera.firmware = register['FirmWare']
+			camera.firmware = register['Firmware']
 			try:
 				device_type = DeviceType.objects.get(code_number=register['ProductID'])
 				brand = Brand.objects.get(devices_type=device_type)
@@ -135,10 +137,7 @@ def api_camera_register(request):
 			camera.save()
 			return Response({
 				'Cmd': 'Register',
-				'Register': {
-					'AuthCodeRetry': settings.AUTH_CODE_RETRY,
-					'ReAuthCodeServer': settings.RE_AUTH_CODE_SERVER
-				},
+				'RewriteConfigServer': getattr(settings, 'CONFIG_SERVER', 'prod-management.iotc.vn'),
 				'Token': camera_token_detail(camera).get('token', ''),
 				'Utc': int(time.time()),
 				'Ret': status.HTTP_200_OK,
@@ -231,6 +230,8 @@ def api_camera_config(request):
 		try:
 			camera = Camera.objects.get(serial=serial)
 			EmbeddedCameraToken.objects.get(camera=camera, key=token)
+			node = Token.objects.get(camera=camera)
+			camera_account = Account.objects.get(camera=camera)
 			camera_topic = camera.camera_topic
 			with open(camera_topic.ca_path.url[1:], 'r') as f:
 				certificate = f.read()
@@ -263,26 +264,40 @@ def api_camera_config(request):
 									}
 								}
 							}
-						],
-						'Http': {
-							'Url': '{protocol}://{host}/api/v2/camera/request/'.format(
-									protocol=settings.API_HOST_PROTOCOL,
-									host=settings.API_HOST_RTMP
-							),
-							'Ssl': True if settings.API_HOST_PROTOCOL == 'https' else False,
-							'Enable': settings.API_HOST_ENABLE,
-							'RequestRetry': settings.AUTH_CODE_RETRY
-						},
+						]
 					},
 					'IPCCfg': [
 						{
 							'ModifyUserPW': {
 								'EncryptType': 'MD5',
-								'NewPassWord': '6QNMIQGe',
-								'PassWord': 'tlJwpbo6',
-								'UserName': 'admin'
+								'NewPassWord': decrypt_password(message=camera_account.password, code=settings.CAMERA_ACCOUNT_SECRET_KEY) if camera_account.password else '',
+								'PassWord': decrypt_password(message=camera_account.old_password, code=settings.CAMERA_ACCOUNT_SECRET_KEY) if camera_account.old_password else '',
+								'UserName': camera_account.username
 							}
-						}
+						},
+						{
+							'Network.RTMP': {
+								'Host': getattr(settings, 'WOWZA_SERVER', '4080bc.entrypoint.cloud.wowza.com'),
+								'Enable': getattr(settings, 'WOWZA_ALLOW_CONNECT_RTMP', True),
+								'Port': getattr(settings, 'WOWZA_PORT', ['', ''])[1],
+								'Node': publish_stream_generator(serial, node.token)
+							}
+						},
+						{
+							'NetWork.RTSP': Config.objects.get(name='RTSP').template.get('RTSP', '')
+						},
+						{
+							'NetWork.HTTP': Config.objects.get(name='HTTP').template.get('HTTP', '')
+						},
+						{
+							'NetWork.NetFTP': Config.objects.get(name='NetFTP').template.get('NetFTP', '')
+						},
+						{
+							'NetWork.MediaPort': Config.objects.get(name='MediaPort').template.get('MediaPort', '')
+						},
+						{
+							'NetWork.Onvif': Config.objects.get(name='Onvif').template.get('Onvif', '')
+						},
 					]
 				},
 				'Ret': status.HTTP_200_OK
@@ -291,6 +306,8 @@ def api_camera_config(request):
 			logger.error(logger_format('Camera does not exists.', api_camera_config.func_name))
 		except EmbeddedCameraToken.DoesNotExist:
 			logger.error(logger_format('Token does not exists.', api_camera_config.func_name))
+		except Token.DoesNotExist:
+			logger.error(logger_format('Node does not exists.', api_camera_config.func_name))
 		except ObjectDoesNotExist:
 			logger.error(logger_format('No topics found.', api_camera_config.func_name))
 		except Exception as e:

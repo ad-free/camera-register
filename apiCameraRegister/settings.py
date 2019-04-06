@@ -44,6 +44,8 @@ INSTALLED_APPS = [
 	'apps.access_point',
 	'apps.brand',
 	'apps.cameras',
+	'apps.cameras_config',
+	'apps.cameras_account',
 	'apps.cameras_token',
 	'apps.firmware',
 ]

@@ -17,7 +17,7 @@ class CameraAdmin(admin.ModelAdmin):
 		'serial', 'brand', 'device_type', 'firmware',
 		'created_at', 'updated_at', 'created_by', 'status_detail', 'status', 'is_publish', 'is_wza', 'is_wifi',
 	)
-	search_fields = ('name', 'serial', 'product_code', 'status_detail', 'is_wifi', 'status', 'server')
-	ordering = ('serial', 'status',)
+	search_fields = ('serial',)
+	ordering = ('serial',)
 	readonly_fields = ('is_wza', 'firmware')
 	# date_hierarchy = 'created_at'
