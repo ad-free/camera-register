@@ -65,7 +65,8 @@ def api_camera_authenticate(request):
 			fpt_hmac = CDLL(settings.LIB_IPC_HMAC_PATH)
 			camera = Camera.objects.get(serial=serial)
 			token = EmbeddedCameraToken.objects.get(camera=camera)
-			data = fpt_hmac.FPTHmac_check(t, token.key, serial, tk)
+			ts = time.time()
+			data = fpt_hmac.FPTHmac_check(int(ts), t, token.key, serial, tk)
 			if data == 0:
 				return Response({
 					'serial': serial,
