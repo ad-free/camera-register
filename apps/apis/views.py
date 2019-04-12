@@ -53,7 +53,7 @@ def api_camera_authenticate(request):
 	
 	if not serial:
 		errors.update({'message': _('This field is required.')})
-	elif check_special_chars(serial) and len(serial) > 30:
+	elif check_special_chars(serial) and len(serial) > 32:
 		errors.update({'message': _('Incorrect formatting.')})
 	if not t:
 		errors.update({'message': _('This field is required.')})
@@ -66,8 +66,9 @@ def api_camera_authenticate(request):
 			camera = Camera.objects.get(serial=serial)
 			token = EmbeddedCameraToken.objects.get(camera=camera)
 			ts = time.time()
-			data = fpt_hmac.FPTHmac_check(int(ts), t, token.key, serial, tk)
+			data = fpt_hmac.FPTHmac_check(int(ts), t.encode('utf-8'), token.key.encode('utf-8'), serial.encode('utf-8'), tk.encode('utf-8'))
 			if data == 0:
+				logger.info(logger_format('-------- END -------', api_camera_authenticate.func_name))
 				return Response({
 					'serial': serial,
 					'result': True
